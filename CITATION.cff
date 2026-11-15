@@ -1,4 +1,6 @@
 cff-version: 1.2.0
+# Zenodo (InvenioRDM) DOI - always resolves to the latest version of this archive
+doi: 10.5281/zenodo.24240234
 message: "If you use this software, please credit SZL Holdings."
 title: "szl-energy-mcp - Energy-metering vertical MCP server - receipt-gated (every result carries its source sha256). Fail-closed, zero deps (SZL Holdings governed-AI estate)"
 authors:
