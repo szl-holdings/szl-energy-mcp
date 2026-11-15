@@ -1,0 +1,11 @@
+{
+ "ts": "2026-11-15T04:25:51Z",
+ "action": "create szl-energy-mcp",
+ "spec": "leaders-study item 8 / execution queue item 6: energy-metering vertical MCP, receipt-gated (every result carries source sha256)",
+ "files_sha256": {
+  "server.py": "a773419009a338a46c1b4c71151b9a82e9b5058493c15a8e32baec7453c2b491",
+  "README.md": "32d901dfce8bd59bcd6d8446b2683710d383b88e228f5d01e35a82cc9dc57ff3",
+  "LICENSE": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f"
+ },
+ "smoke_test": "PASS 2026-11-15 (rollup honest-zero, index live, battery context MEASURED)"
+}
