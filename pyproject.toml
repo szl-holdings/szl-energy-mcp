@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "szl-energy-mcp"
+version = "0.1.0"
+description = "Energy-metering vertical MCP server - receipt-gated: every tool result carries source URL + sha256 + schema; never fabricates joules, watts, or carbon. Zero dependencies, Python 3.9+ stdlib only."
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+authors = [{ name = "Stephen P. Lutar Jr. / SZL Holdings" }]
+urls = { Homepage = "https://a-11-oy.com" }
+
+[project.scripts]
+szl-energy-mcp = "szl_energy_mcp:main"
+
+[tool.setuptools]
+py-modules = ["szl_energy_mcp"]
