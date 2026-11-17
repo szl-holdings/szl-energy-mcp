@@ -15,8 +15,9 @@ From the estate frontier study (2026-11-15, item 8): the Upstage korean-tax-calc
 ## Run
 
 ```bash
-python server.py            # stdio MCP (JSON-RPC 2.0, newline-delimited)
-python server.py --smoke    # one-shot self-test against the live dataset
+python szl_energy_mcp.py       # stdio MCP (JSON-RPC 2.0, newline-delimited)
+python szl_energy_mcp.py --smoke    # one-shot self-test against the live dataset
+szl-energy-mcp                   # console entry point after pip install szl-energy-mcp
 ```
 
 Zero dependencies — Python 3.9+ stdlib only.
@@ -24,7 +25,7 @@ Zero dependencies — Python 3.9+ stdlib only.
 ## Wire into an MCP client
 
 ```json
-{"mcpServers": {"szl-energy": {"command": "python", "args": ["/path/to/szl-energy-mcp/server.py"]}}}
+{"mcpServers": {"szl-energy": {"command": "python", "args": ["/path/to/szl-energy-mcp/szl_energy_mcp.py"]}}}
 ```
 
 ## Doctrine

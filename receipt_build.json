@@ -7,5 +7,13 @@
   "README.md": "32d901dfce8bd59bcd6d8446b2683710d383b88e228f5d01e35a82cc9dc57ff3",
   "LICENSE": "7ecd8ce1d30b8aa26232f5c7c878cca53bc273547ce52f1678f955154746e64f"
  },
- "smoke_test": "PASS 2026-11-15 (rollup honest-zero, index live, battery context MEASURED)"
+ "smoke_test": "PASS 2026-11-15 (rollup honest-zero, index live, battery context MEASURED)",
+ "amendment_20261117": {
+  "ts": "2026-11-17T20:04:16Z",
+  "action": "rename server.py -> szl_energy_mcp.py for canonical PyPI packaging (generic top-level module name server must not be installed site-wide); module bytes unchanged",
+  "szl_energy_mcp_py_sha256": "a773419009a338a46c1b4c71151b9a82e9b5058493c15a8e32baec7453c2b491",
+  "note_sha_same_as_server_py": true,
+  "readme_sha256_after_update": "899159194f9fecc5ab1134b92808f1ce5a5f9b1d5ac717cdbb439be10912003a",
+  "packaging": "pyproject.toml added; console script szl-energy-mcp = szl_energy_mcp:main; zero dependencies; canonical path szl.pypi-release.v2"
+ }
 }
