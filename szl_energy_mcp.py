@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 DATASET = "https://huggingface.co/datasets/SZLHOLDINGS/frontier-54-runs"
 TREE_API = "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/tree/main"
 SERVER_VERSION = "0.1.0"
+__version__ = SERVER_VERSION
 TOOLS_SPEC = [
     {
         "name": "energy_rollup",
