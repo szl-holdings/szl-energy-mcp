@@ -26,7 +26,8 @@ concurrency:
 
 jobs:
   stdlib-mcp-contracts:
-    runs-on: ubuntu-latest
+    # Python 3.9 is not distributed on ubuntu-latest (26.04); pin a supported runner.
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       fail-fast: false
