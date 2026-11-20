@@ -14,6 +14,8 @@ Estate assets served:
 """
 import json
 import hashlib
+import math
+import re
 import sys
 import urllib.request
 from datetime import datetime, timezone
@@ -22,10 +24,61 @@ DATASET = "https://huggingface.co/datasets/SZLHOLDINGS/frontier-54-runs"
 TREE_API = "https://huggingface.co/api/datasets/SZLHOLDINGS/frontier-54-runs/tree/main"
 SERVER_VERSION = "0.1.0"
 __version__ = SERVER_VERSION
+MAX_SOURCE_BYTES = 1_048_576
+MAX_INPUT_LINE_CHARS = 16_384
+ENERGY_LIST_LIMIT = 200
+BATTERY_LIST_LIMIT = 500
+TOKEN_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\Z")
+
+
+class Unavailable(ValueError):
+    """Fixed non-secret denial, never caller-controlled message text."""
+
+
+def _unique_pairs(pairs):
+    value = {}
+    for key, content in pairs:
+        if key in value:
+            raise Unavailable("DUPLICATE_JSON_KEY")
+        value[key] = content
+    return value
+
+
+def _no_nonfinite(_):
+    raise Unavailable("NONFINITE_JSON")
+
+
+def _validated_json(raw):
+    try:
+        return json.loads(raw, object_pairs_hook=_unique_pairs,
+                          parse_constant=_no_nonfinite)
+    except (UnicodeError, ValueError, RecursionError) as exc:
+        raise Unavailable("SOURCE_JSON_INVALID") from exc
+
+
+def _validated_tree(raw, prefix, limit):
+    entries = _validated_json(raw)
+    if not isinstance(entries, list) or len(entries) >= limit:
+        raise Unavailable("INDEX_COVERAGE_UNAVAILABLE")
+    names = []
+    for item in entries:
+        if not isinstance(item, dict):
+            raise Unavailable("INDEX_ITEM_INVALID")
+        path = item.get("path")
+        if not isinstance(path, str) or not path.startswith(prefix):
+            raise Unavailable("INDEX_PATH_INVALID")
+        if item.get("type") == "file":
+            name = path[len(prefix):]
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", name):
+                raise Unavailable("INDEX_FILE_INVALID")
+            names.append(name)
+    if len(names) != len(set(names)):
+        raise Unavailable("INDEX_DUPLICATE_FILE")
+    return names
 TOOLS_SPEC = [
     {
         "name": "energy_rollup",
-        "description": "Latest fleet energy rollup receipt (szl.energy-attestation/v2). MEASURED joules from fleet NVML sampling; honest zero-state is reported as-measured.",
+        "description": "Fleet rollup source (szl.energy-attestation/v2). Zero source receipts mean NO MEASUREMENT; fetched checksum does not verify the issuer.",
         "inputSchema": {"type": "object", "properties": {}, "required": []},
     },
     {
@@ -51,6 +104,10 @@ def _receipt(kind, url, sha256, note=None):
         "source": url,
         "sha256": sha256,
         "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "integrity": "LOCAL_FETCH_CHECKSUM_ONLY",
+        "issuer_signature_verified": False,
+        "source_revision_verified": False,
+        "source_reference": "MOVING_MAIN_UNPINNED",
     }
     if note:
         r["note"] = note
@@ -60,23 +117,40 @@ def _receipt(kind, url, sha256, note=None):
 def _fetch(url):
     req = urllib.request.Request(url, headers={"User-Agent": "szl-energy-mcp/" + SERVER_VERSION})
     with urllib.request.urlopen(req, timeout=30) as resp:
-        return resp.read()
+        raw = resp.read(MAX_SOURCE_BYTES + 1)
+    if len(raw) > MAX_SOURCE_BYTES:
+        raise Unavailable("SOURCE_BYTE_BUDGET")
+    return raw
 
 
 def call_energy_rollup():
     url = DATASET + "/resolve/main/energy/fleet-rollup-1.json"
     raw = _fetch(url)
-    data = json.loads(raw)
+    data = _validated_json(raw)
+    if not isinstance(data, dict) or data.get("schema") != "szl.energy-attestation/v2":
+        raise Unavailable("ROLLUP_SCHEMA_INVALID")
+    count = data.get("measured_receipts")
+    total = data.get("total_joules")
+    if type(count) is not int or count < 0:
+        raise Unavailable("ROLLUP_COUNT_INVALID")
+    if type(total) not in (int, float) or not math.isfinite(total) or total < 0:
+        raise Unavailable("ROLLUP_JOULES_INVALID")
+    if count == 0 and total != 0:
+        raise Unavailable("ROLLUP_DENOMINATOR_CONTRADICTION")
     sha = hashlib.sha256(raw).hexdigest()
+    status = ("NO_MEASUREMENT_RECEIPTS_OBSERVED" if count == 0
+              else "SOURCE_DECLARED_MEASUREMENT_UNVERIFIED")
     result = {
         "rollup": data,
+        "measurement_state": status,
         "honesty": (
-            "Measured_receipts=%d. If total_joules is 0, that is the as-measured state, "
-            "not a placeholder. Schema: szl.energy-attestation/v2 (NVML fleet sampling; "
-            "EPA eGRID 0.385 kgCO2/kWh published-average conversion only)."
-            % data.get("measured_receipts", 0)
+            "measured_receipts=%d; zero receipts means NO MEASUREMENT, not evidence "
+            "of a zero-joule observation. This local raw-source hash does not "
+            "authenticate the issuer, fleet, NVML sampler or carbon conversion."
+            % count
         ),
-        "receipt": _receipt("szl.energy-attestation/v2", url, sha, "fetched live; sha over raw bytes"),
+        "receipt": _receipt("szl.energy-attestation/v2", url, sha,
+                            "live moving-main fetch; checksum, NOT signature"),
     }
     return result
 
@@ -84,12 +158,12 @@ def call_energy_rollup():
 def call_energy_receipt_index():
     url = TREE_API + "/energy?limit=200"
     raw = _fetch(url)
-    entries = json.loads(raw)
-    files = [e.get("path", "").split("/")[-1] for e in entries if e.get("type") == "file"]
+    files = _validated_tree(raw, "energy/", ENERGY_LIST_LIMIT)
     result = {
         "count": len(files),
         "files": files,
-        "honesty": "Live index of the public receipts dataset; absent entries are absent, not omitted.",
+        "coverage": "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED",
+        "honesty": "Unpinned public index; source and issuer not independently verified.",
         "receipt": _receipt("szl.frontier-54-runs/energy-index", url, hashlib.sha256(raw).hexdigest()),
     }
     return result
@@ -98,19 +172,34 @@ def call_energy_receipt_index():
 def call_battery_energy_context(token):
     url = TREE_API + "/benchmark?limit=500"
     raw = _fetch(url)
-    entries = json.loads(raw)
+    if not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
+        raise Unavailable("MODEL_TOKEN_INVALID")
+    names = _validated_tree(raw, "benchmark/", BATTERY_LIST_LIMIT)
     tok = token.lower()
-    matches = [e.get("path", "").split("/")[-1] for e in entries if tok in e.get("path", "").lower()]
+    matches = [name for name in names if tok in name.lower()]
     if not matches:
         return {
             "matches": [],
-            "honesty": "No battery receipt filename matched. Absent = absent.",
+            "honesty": "No matching filename on the observed page; global absence is UNVERIFIED.",
             "receipt": _receipt("szl.frontier-54-runs/benchmark-index", url, hashlib.sha256(raw).hexdigest()),
         }
-    name = matches[0]
+    # The Hub tree order is not a trustworthy receipt-selection policy.
+    # Prefer a case-sensitive exact filename only; otherwise a substring must
+    # select exactly one file or the tool refuses instead of inventing identity.
+    exact = [filename for filename in matches if filename == token]
+    if len(exact) == 1:
+        name = exact[0]
+        match_policy = "EXACT_FILENAME"
+    elif len(matches) == 1:
+        name = matches[0]
+        match_policy = "UNIQUE_SUBSTRING"
+    else:
+        raise Unavailable("BATTERY_RECEIPT_AMBIGUOUS")
     furl = DATASET + "/resolve/main/benchmark/" + name
     fraw = _fetch(furl)
-    data = json.loads(fraw)
+    data = _validated_json(fraw)
+    if not isinstance(data, dict):
+        raise Unavailable("BATTERY_RECEIPT_INVALID")
     context = {
         "receipt_file": name,
         "kind": data.get("kind"),
@@ -126,18 +215,29 @@ def call_battery_energy_context(token):
         "context": context,
         "honesty": "Battery receipts carry measured hardware context, not joules. No energy number is inferred from this context.",
         "receipt": _receipt("szl.estate-battery", furl, hashlib.sha256(fraw).hexdigest(), "sha over raw receipt bytes"),
-        "other_matches": matches[1:5],
+        "other_matches": [filename for filename in matches if filename != name][:4],
+        "selection_policy": match_policy,
+        "coverage": "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED",
     }
 
 
 def dispatch(name, args):
+    if not isinstance(args, dict):
+        raise Unavailable("ARGUMENTS_NOT_OBJECT")
     if name == "energy_rollup":
+        if args:
+            raise Unavailable("ARGUMENTS_UNEXPECTED")
         return call_energy_rollup()
     if name == "energy_receipt_index":
+        if args:
+            raise Unavailable("ARGUMENTS_UNEXPECTED")
         return call_energy_receipt_index()
     if name == "battery_energy_context":
-        return call_battery_energy_context(args.get("model_token", ""))
-    raise ValueError("unknown tool: " + name)
+        token = args.get("model_token")
+        if set(args) != {"model_token"} or not isinstance(token, str) or not TOKEN_RE.fullmatch(token):
+            raise Unavailable("MODEL_TOKEN_INVALID")
+        return call_battery_energy_context(token)
+    raise Unavailable("TOOL_NOT_FOUND")
 
 
 def send(obj):
@@ -156,14 +256,30 @@ def main():
         }
         print(json.dumps(out, indent=1))
         return
-    for line in sys.stdin:
-        line = line.strip()
+    while True:
+        line = sys.stdin.readline(MAX_INPUT_LINE_CHARS + 1)
         if not line:
+            break
+        if len(line) > MAX_INPUT_LINE_CHARS:
+            # Drain a too-long NDJSON request without growing a second string.
+            if not line.endswith("\n"):
+                while True:
+                    part = sys.stdin.readline(4096)
+                    if not part or part.endswith("\n"):
+                        break
+            send({"jsonrpc": "2.0", "id": None,
+                  "error": {"code": -32600, "message": "request too large"}})
+            continue
+        if not line.strip():
             continue
         try:
-            msg = json.loads(line)
-        except json.JSONDecodeError:
-            send({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}})
+            msg = json.loads(line, object_pairs_hook=_unique_pairs,
+                             parse_constant=_no_nonfinite)
+            if not isinstance(msg, dict):
+                raise Unavailable("MESSAGE_NOT_OBJECT")
+        except (ValueError, RecursionError):
+            send({"jsonrpc": "2.0", "id": None,
+                  "error": {"code": -32700, "message": "invalid JSON request"}})
             continue
         mid = msg.get("id")
         method = msg.get("method")
@@ -185,8 +301,14 @@ def main():
                     "isError": False,
                 }})
             except Exception as ex:
+                # Exception strings may contain remote URLs, headers, raw data
+                # or caller-controlled text; never reflect them in tool output.
                 send({"jsonrpc": "2.0", "id": mid, "result": {
-                    "content": [{"type": "text", "text": json.dumps({"error": repr(ex), "fail_closed": True})}],
+                    "content": [{"type": "text", "text": json.dumps({
+                        "state": "UNAVAILABLE",
+                        "error_code": "SOURCE_OR_INPUT_UNAVAILABLE",
+                        "fail_closed": True,
+                    })}],
                     "isError": True,
                 }})
         elif method == "ping":
