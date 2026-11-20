@@ -73,7 +73,7 @@ class EnergyMCPContracts(unittest.TestCase):
             result = m.call_energy_receipt_index()
         self.assertEqual(result["count"], 2)
         self.assertEqual(result["files"], ["one.json", "two.json"])
-        self.assertEqual(result["coverage"], "COMPLETE_WITHIN_SINGLE_PAGE_ONLY")
+        self.assertEqual(result["coverage"], "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED")
         self.assertFalse(result["receipt"]["issuer_signature_verified"])
 
     def test_energy_index_at_page_limit_never_claims_absence(self):
@@ -110,6 +110,13 @@ class EnergyMCPContracts(unittest.TestCase):
             with self.subTest(args=args):
                 with self.assertRaises(m.Unavailable):
                     m.dispatch("energy_receipt_index", args)
+
+    def test_no_matching_battery_filename_does_not_prove_global_absence(self):
+        with patch.object(m, "_fetch", return_value=wire([])):
+            result = m.call_battery_energy_context("base")
+        self.assertEqual(result["matches"], [])
+        self.assertIn("global absence is UNVERIFIED", result["honesty"])
+        self.assertFalse(result["receipt"]["issuer_signature_verified"])
 
     def test_battery_context_reports_no_joules(self):
         names = wire([item("benchmark/", "base-baseline.json")])

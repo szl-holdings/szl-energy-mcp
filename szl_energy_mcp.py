@@ -162,7 +162,7 @@ def call_energy_receipt_index():
     result = {
         "count": len(files),
         "files": files,
-        "coverage": "COMPLETE_WITHIN_SINGLE_PAGE_ONLY",
+        "coverage": "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED",
         "honesty": "Unpinned public index; source and issuer not independently verified.",
         "receipt": _receipt("szl.frontier-54-runs/energy-index", url, hashlib.sha256(raw).hexdigest()),
     }
@@ -180,7 +180,7 @@ def call_battery_energy_context(token):
     if not matches:
         return {
             "matches": [],
-            "honesty": "No battery receipt filename matched. Absent = absent.",
+            "honesty": "No matching filename on the observed page; global absence is UNVERIFIED.",
             "receipt": _receipt("szl.frontier-54-runs/benchmark-index", url, hashlib.sha256(raw).hexdigest()),
         }
     name = matches[0]
