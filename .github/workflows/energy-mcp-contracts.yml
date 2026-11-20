@@ -1,0 +1,51 @@
+name: energy-mcp-security-contracts
+
+# GitHub-only, network-free deterministic stdio/response controls.
+# No MCP server deployment, HF writes, credentials or paid GPU runners.
+on:
+  pull_request:
+    paths:
+      - "szl_energy_mcp.py"
+      - "tests/test_energy_mcp_security.py"
+      - "README.md"
+      - ".github/workflows/energy-mcp-contracts.yml"
+  push:
+    branches: [main]
+    paths:
+      - "szl_energy_mcp.py"
+      - "tests/test_energy_mcp_security.py"
+      - "README.md"
+      - ".github/workflows/energy-mcp-contracts.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: energy-mcp-security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  stdlib-mcp-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.12"]
+    steps:
+      - name: Checkout exact source without stored credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up supported Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Syntax and offline negative controls
+        run: |
+          python -m compileall -q szl_energy_mcp.py tests/test_energy_mcp_security.py
+          python -m unittest discover -s tests -p 'test_energy_mcp_security.py' -v
+      - name: Scope notice
+        if: always()
+        run: |
+          echo 'Source tests do not establish issuer signatures, complete HF pagination, a hosted MCP endpoint or production liveness.' >> "$GITHUB_STEP_SUMMARY"
