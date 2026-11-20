@@ -118,6 +118,55 @@ class EnergyMCPContracts(unittest.TestCase):
         self.assertIn("global absence is UNVERIFIED", result["honesty"])
         self.assertFalse(result["receipt"]["issuer_signature_verified"])
 
+
+    def test_ambiguous_battery_match_refuses_before_receipt_fetch(self):
+        # Reorder the tree to prove the selected result is not list-order based.
+        for names in (
+            ["model-a.json", "model-a-v2.json"],
+            ["model-a-v2.json", "model-a.json"],
+        ):
+            with self.subTest(names=names):
+                body = wire([item("benchmark/", name) for name in names])
+                with patch.object(m, "_fetch", return_value=body) as fetch:
+                    with self.assertRaisesRegex(
+                        m.Unavailable, "BATTERY_RECEIPT_AMBIGUOUS"
+                    ):
+                        m.call_battery_energy_context("model-a")
+                self.assertEqual(fetch.call_count, 1)
+                self.assertIn("benchmark?limit=500", fetch.call_args[0][0])
+
+    def test_exact_filename_wins_over_substring_regardless_of_tree_order(self):
+        receipt = wire({"kind": "evaluation", "gpu": "synthetic"})
+        for names in (
+            ["old-model-a.json", "model-a.json"],
+            ["model-a.json", "old-model-a.json"],
+        ):
+            with self.subTest(names=names):
+                tree = wire([item("benchmark/", name) for name in names])
+                with patch.object(m, "_fetch", side_effect=[tree, receipt]) as fetch:
+                    result = m.call_battery_energy_context("model-a.json")
+                self.assertEqual(fetch.call_count, 2)
+                self.assertTrue(
+                    fetch.call_args_list[1].args[0].endswith(
+                        "/benchmark/model-a.json"
+                    )
+                )
+                self.assertEqual(result["context"]["receipt_file"], "model-a.json")
+                self.assertEqual(result["selection_policy"], "EXACT_FILENAME")
+                self.assertEqual(result["other_matches"], ["old-model-a.json"])
+                self.assertEqual(
+                    result["coverage"], "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED"
+                )
+
+    def test_unique_substring_selection_is_explicit_not_globally_complete(self):
+        tree = wire([item("benchmark/", "study-b.json")])
+        receipt = wire({"kind": "evaluation"})
+        with patch.object(m, "_fetch", side_effect=[tree, receipt]):
+            result = m.call_battery_energy_context("study")
+        self.assertEqual(result["selection_policy"], "UNIQUE_SUBSTRING")
+        self.assertEqual(result["other_matches"], [])
+        self.assertEqual(result["context"]["receipt_file"], "study-b.json")
+
     def test_battery_context_reports_no_joules(self):
         names = wire([item("benchmark/", "base-baseline.json")])
         receipt = wire({"kind": "evaluation", "gpu": "synthetic", "node": "test", "score": 1})

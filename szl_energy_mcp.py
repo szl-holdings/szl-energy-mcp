@@ -183,7 +183,18 @@ def call_battery_energy_context(token):
             "honesty": "No matching filename on the observed page; global absence is UNVERIFIED.",
             "receipt": _receipt("szl.frontier-54-runs/benchmark-index", url, hashlib.sha256(raw).hexdigest()),
         }
-    name = matches[0]
+    # The Hub tree order is not a trustworthy receipt-selection policy.
+    # Prefer a case-sensitive exact filename only; otherwise a substring must
+    # select exactly one file or the tool refuses instead of inventing identity.
+    exact = [filename for filename in matches if filename == token]
+    if len(exact) == 1:
+        name = exact[0]
+        match_policy = "EXACT_FILENAME"
+    elif len(matches) == 1:
+        name = matches[0]
+        match_policy = "UNIQUE_SUBSTRING"
+    else:
+        raise Unavailable("BATTERY_RECEIPT_AMBIGUOUS")
     furl = DATASET + "/resolve/main/benchmark/" + name
     fraw = _fetch(furl)
     data = _validated_json(fraw)
@@ -204,7 +215,9 @@ def call_battery_energy_context(token):
         "context": context,
         "honesty": "Battery receipts carry measured hardware context, not joules. No energy number is inferred from this context.",
         "receipt": _receipt("szl.estate-battery", furl, hashlib.sha256(fraw).hexdigest(), "sha over raw receipt bytes"),
-        "other_matches": matches[1:5],
+        "other_matches": [filename for filename in matches if filename != name][:4],
+        "selection_policy": match_policy,
+        "coverage": "ONE_PAGE_ONLY_GLOBAL_COMPLETENESS_UNVERIFIED",
     }
 
 
